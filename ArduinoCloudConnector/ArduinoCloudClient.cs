@@ -6,7 +6,7 @@ namespace ArduinoCloudConnector
     {
         private readonly HttpClient _httpClient = new();
 
-        public async Task<string?> GetAccessTokenAsync()
+        public async Task<string> GetAccessTokenAsync()
         {
             try
             {
@@ -33,19 +33,13 @@ namespace ArduinoCloudConnector
                 var responseBody = await response.Content.ReadAsStringAsync();
                 var tokenResponse = JsonConvert.DeserializeObject<TokenResponse>(responseBody);
 
-                return tokenResponse?.AccessToken;
+                return tokenResponse is null ? string.Empty : tokenResponse.AccessToken;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error occurred: {ex.Message}");
                 throw;
             }
-        }
-
-        private class TokenResponse
-        {
-            [JsonProperty("access_token")]
-            public string AccessToken { get; set; }
         }
     }
 }
