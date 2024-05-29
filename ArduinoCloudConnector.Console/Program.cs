@@ -1,6 +1,6 @@
 ﻿using DotNetEnv;
 
-namespace ArduinoCloudConnector.ConsoleApp
+namespace ArduinoCloudConnector.Console
 {
     internal class Program
     {
@@ -14,11 +14,11 @@ namespace ArduinoCloudConnector.ConsoleApp
             try
             {
                 var accessToken = await arduinoCloudClient.GetAccessTokenAsync();
-                Console.WriteLine(accessToken);
+                System.Console.WriteLine(accessToken);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to get access token: {ex.Message}");
+                System.Console.WriteLine($"Failed to get access token: {ex.Message}");
             }
         }
     }
