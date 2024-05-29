@@ -2,6 +2,8 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ArduinoCloudConnector", "ArduinoCloudConnector\ArduinoCloudConnector.csproj", "{2E03B0B9-2472-4CE2-A5C6-6ECC3DCE8DE2}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ArduinoCloudConnector.Console", "ArduinoCloudConnector.Console\ArduinoCloudConnector.Console.csproj", "{4FE347CA-CCB3-4179-9607-CBD5D07A627F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -12,5 +14,9 @@ Global
 		{2E03B0B9-2472-4CE2-A5C6-6ECC3DCE8DE2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2E03B0B9-2472-4CE2-A5C6-6ECC3DCE8DE2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2E03B0B9-2472-4CE2-A5C6-6ECC3DCE8DE2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4FE347CA-CCB3-4179-9607-CBD5D07A627F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4FE347CA-CCB3-4179-9607-CBD5D07A627F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4FE347CA-CCB3-4179-9607-CBD5D07A627F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4FE347CA-CCB3-4179-9607-CBD5D07A627F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
