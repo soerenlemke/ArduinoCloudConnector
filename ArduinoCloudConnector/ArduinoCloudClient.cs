@@ -1,29 +1,15 @@
-﻿using System;
-using System.Net.Http;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using Newtonsoft.Json;
-using System.Threading;
+﻿using Newtonsoft.Json;
 
 namespace ArduinoCloudConnector
 {
-    public class ArduinoCloudClient
+    public class ArduinoCloudClient(string clientId, string clientSecret)
     {
-        private readonly HttpClient _httpClient;
-        private readonly string _clientId;
-        private readonly string _clientSecret;
-
-        public ArduinoCloudClient(string clientId, string clientSecret)
-        {
-            _httpClient = new HttpClient();
-            _clientId = clientId;
-            _clientSecret = clientSecret;
-        }
+        private readonly HttpClient _httpClient = new();
 
         private async Task<string> GetAccessTokenAsync()
         {
-            int retryCount = 3;
-            int delay = 2000; // 2 seconds
+            const int retryCount = 3;
+            const int delay = 2000;
 
             for (int i = 0; i < retryCount; i++)
             {
@@ -34,8 +20,8 @@ namespace ArduinoCloudConnector
                     var content = new FormUrlEncodedContent(new[]
                     {
                         new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                        new KeyValuePair<string, string>("client_id", _clientId),
-                        new KeyValuePair<string, string>("client_secret", _clientSecret),
+                        new KeyValuePair<string, string>("client_id", clientId),
+                        new KeyValuePair<string, string>("client_secret", clientSecret),
                         new KeyValuePair<string, string>("audience", "https://api2.arduino.cc/iot")
                     });
                     tokenRequest.Content = content;
@@ -50,7 +36,6 @@ namespace ArduinoCloudConnector
                         
                         if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                         {
-                            // Log details for debugging
                             Console.WriteLine("404 Not Found error. URL or resource might be incorrect or temporarily unavailable.");
                         }
 
@@ -74,7 +59,7 @@ namespace ArduinoCloudConnector
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error occurred: {ex.Message}");
-                    if (i == retryCount - 1) // If the last retry also fails
+                    if (i == retryCount - 1)
                     {
                         throw;
                     }
@@ -84,16 +69,16 @@ namespace ArduinoCloudConnector
             return string.Empty;
         }
 
-        public async Task<string> GetThingPropertiesAsync(string thingId)
+        public async Task<List<ThingProperty>> GetThingPropertiesAsync(string thingId)
         {
-            int retryCount = 3;
-            int delay = 2000; // 2 seconds
+            const int retryCount = 3;
+            const int delay = 2000;
 
             for (int i = 0; i < retryCount; i++)
             {
                 try
                 {
-                    Console.WriteLine($"Getting access token for clientId: {_clientId}");
+                    Console.WriteLine($"Getting access token for clientId: {clientId}");
                     var accessToken = await GetAccessTokenAsync();
                     Console.WriteLine($"Access token received: {accessToken}");
 
@@ -114,7 +99,6 @@ namespace ArduinoCloudConnector
                             Console.WriteLine("Thing not found. Please check the thingId and ensure the thing exists in your Arduino Cloud.");
                         }
 
-                        // Retry on server errors or rate limiting
                         if (response.StatusCode == System.Net.HttpStatusCode.InternalServerError ||
                             response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
                         {
@@ -127,19 +111,20 @@ namespace ArduinoCloudConnector
                     }
 
                     var responseBody = await response.Content.ReadAsStringAsync();
-                    return responseBody;
+                    var thingProperties = JsonConvert.DeserializeObject<List<ThingProperty>>(responseBody);
+                    return thingProperties;
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error occurred: {ex.Message}");
-                    if (i == retryCount - 1) // If the last retry also fails
+                    if (i == retryCount - 1)
                     {
                         throw;
                     }
                     Thread.Sleep(delay);
                 }
             }
-            return string.Empty;
+            return null;
         }
     }
 }
