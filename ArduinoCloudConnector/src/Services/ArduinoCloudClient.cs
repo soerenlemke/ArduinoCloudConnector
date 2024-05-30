@@ -136,8 +136,6 @@ public class ArduinoCloudClient(HttpClient httpClient, IOptions<ArduinoCloudClie
     TODO: Improve Error Handling: Use specific exceptions for different error types to make error handling more granular.
     TODO: Add Logging: Implement a logging mechanism instead of using Console.WriteLine.
     TODO: Asynchronous Programming: Use Task.Delay instead of Thread.Sleep for asynchronous delay.
-    TODO: Dependency Injection: Allow injecting an HttpClient instance for easier testing.
-    TODO: Configuration: Use a configuration class or dependency injection for the client ID and secret.
     // Adding features
     TODO: CreateThingAsync: Create a new Thing in the Arduino IoT Cloud.
     TODO: UpdateThingPropertyAsync: Update a specific property of a Thing.
