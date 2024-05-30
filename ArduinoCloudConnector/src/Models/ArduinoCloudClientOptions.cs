@@ -2,6 +2,6 @@ namespace ArduinoCloudConnector.Models;
 
 public class ArduinoCloudClientOptions
 {
-    public string? ClientId { get; set; }
-    public string? ClientSecret { get; set; }
+    public required string ClientId { get; set; }
+    public required string ClientSecret { get; set; }
 }

@@ -1,35 +1,35 @@
 ﻿using System.Net;
 using System.Net.Http.Headers;
 using ArduinoCloudConnector.Models;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 
 namespace ArduinoCloudConnector.Services;
 
-public class ArduinoCloudClient(HttpClient httpClient, IOptions<ArduinoCloudClientOptions> options)
+public class ArduinoCloudClient(
+    HttpClient httpClient,
+    IOptions<ArduinoCloudClientOptions> options,
+    ILogger<ArduinoCloudClient> logger)
 {
+    private const int RetryCount = 3;
+    private const int Delay = 2000;
+
     private async Task<string> GetAccessTokenAsync()
     {
-        const int retryCount = 3;
-        const int delay = 2000;
-
-        for (var i = 0; i < retryCount; i++)
+        for (var i = 0; i < RetryCount; i++)
             try
             {
                 var tokenRequest =
                     new HttpRequestMessage(HttpMethod.Post, "https://api2.arduino.cc/iot/v1/clients/token");
-
-                if (options.Value is { ClientId: not null, ClientSecret: not null })
+                var content = new FormUrlEncodedContent(new[]
                 {
-                    var content = new FormUrlEncodedContent(new[]
-                    {
-                        new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                        new KeyValuePair<string, string>("client_id", options.Value.ClientId),
-                        new KeyValuePair<string, string>("client_secret", options.Value.ClientSecret),
-                        new KeyValuePair<string, string>("audience", "https://api2.arduino.cc/iot")
-                    });
-                    tokenRequest.Content = content;
-                }
+                    new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                    new KeyValuePair<string, string>("client_id", options.Value.ClientId),
+                    new KeyValuePair<string, string>("client_secret", options.Value.ClientSecret),
+                    new KeyValuePair<string, string>("audience", "https://api2.arduino.cc/iot")
+                });
+                tokenRequest.Content = content;
 
                 if (tokenRequest.Content != null)
                     tokenRequest.Content.Headers.ContentType =
@@ -40,18 +40,16 @@ public class ArduinoCloudClient(HttpClient httpClient, IOptions<ArduinoCloudClie
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorResponse = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Request failed with status code {response.StatusCode}: {errorResponse}");
+                    logger.LogError("Request failed with status code {response.StatusCode}: {errorResponse}",
+                        response.StatusCode, errorResponse);
 
                     if (response.StatusCode == HttpStatusCode.NotFound)
-                        Console.WriteLine(
+                        logger.LogError(
                             "404 Not Found error. URL or resource might be incorrect or temporarily unavailable.");
-
-                    // Retry on server errors or rate limiting
-                    if (response.StatusCode == HttpStatusCode.InternalServerError ||
-                        response.StatusCode == HttpStatusCode.ServiceUnavailable)
+                    if (response.StatusCode is HttpStatusCode.InternalServerError or HttpStatusCode.ServiceUnavailable)
                     {
-                        Console.WriteLine("Server error. Retrying...");
-                        Thread.Sleep(delay);
+                        logger.LogInformation("Server error. Retrying...");
+                        Thread.Sleep(Delay);
                         continue;
                     }
 
@@ -66,9 +64,9 @@ public class ArduinoCloudClient(HttpClient httpClient, IOptions<ArduinoCloudClie
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error occurred: {ex.Message}");
-                if (i == retryCount - 1) throw;
-                Thread.Sleep(delay);
+                logger.LogError("Error occurred: {ex.Message}", ex.Message);
+                if (i == RetryCount - 1) throw;
+                Thread.Sleep(Delay);
             }
 
         return string.Empty;
@@ -76,39 +74,40 @@ public class ArduinoCloudClient(HttpClient httpClient, IOptions<ArduinoCloudClie
 
     public async Task<List<ThingProperty>?> GetThingPropertiesAsync(string thingId)
     {
-        const int retryCount = 3;
-        const int delay = 2000;
-
-        for (var i = 0; i < retryCount; i++)
+        for (var i = 0; i < RetryCount; i++)
             try
             {
-                Console.WriteLine($"Getting access token for clientId: {options.Value.ClientId}");
+                logger.LogInformation("Getting access token for clientId: {options.Value.ClientId}",
+                    options.Value.ClientId);
                 var accessToken = await GetAccessTokenAsync();
-                Console.WriteLine($"Access token received: {accessToken}");
+                logger.LogInformation("Access token received: {accessToken}", accessToken);
 
                 var request = new HttpRequestMessage(HttpMethod.Get,
                     $"https://api2.arduino.cc/iot/v2/things/{thingId}/properties");
                 request.Headers.Add("Authorization", $"Bearer {accessToken}");
 
-                Console.WriteLine(
-                    $"Sending request to URL: https://api2.arduino.cc/iot/v2/things/{thingId}/properties");
+                logger.LogInformation(
+                    "Sending request to URL: https://api2.arduino.cc/iot/v2/things/{thingId}/properties", thingId);
 
                 var response = await httpClient.SendAsync(request);
 
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorResponse = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Request failed with status code {response.StatusCode}: {errorResponse}");
+                    logger.LogError("Request failed with status code {response.StatusCode}: {errorResponse}",
+                        response.StatusCode,
+                        errorResponse);
 
                     if (response.StatusCode == HttpStatusCode.NotFound)
-                        Console.WriteLine(
-                            "Thing not found. Please check the thingId and ensure the thing exists in your Arduino Cloud.");
+                        logger.LogError(
+                            "Thing not found. Please check the thingId {thingId} and ensure the thing exists in your Arduino Cloud.",
+                            thingId);
 
                     if (response.StatusCode == HttpStatusCode.InternalServerError ||
                         response.StatusCode == HttpStatusCode.ServiceUnavailable)
                     {
-                        Console.WriteLine("Server error. Retrying...");
-                        Thread.Sleep(delay);
+                        logger.LogInformation("Server error. Retrying...");
+                        Thread.Sleep(Delay);
                         continue;
                     }
 
@@ -122,9 +121,9 @@ public class ArduinoCloudClient(HttpClient httpClient, IOptions<ArduinoCloudClie
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error occurred: {ex.Message}");
-                if (i == retryCount - 1) throw;
-                Thread.Sleep(delay);
+                logger.LogError("Error occurred: {ex.Message}", ex.Message);
+                if (i == RetryCount - 1) throw;
+                Thread.Sleep(Delay);
             }
 
         return null;

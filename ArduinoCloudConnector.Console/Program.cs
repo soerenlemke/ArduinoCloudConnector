@@ -3,6 +3,7 @@ using ArduinoCloudConnector.Services;
 using DotNetEnv;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace ArduinoCloudConnector.Console;
 
@@ -10,10 +11,25 @@ internal class Program
 {
     public static async Task Main(string[] args)
     {
+        var loggerFactory = LoggerFactory.Create(
+            builder => builder
+                .AddConsole()
+                .AddDebug()
+                .SetMinimumLevel(LogLevel.Debug)
+        );
+        var logger = loggerFactory.CreateLogger<Program>();
+
+        
         var host = Host.CreateDefaultBuilder()
-            .ConfigureServices((context, services) =>
+            .ConfigureServices((_, services) =>
             {
                 services.AddHttpClient<ArduinoCloudClient>();
+                services.AddLogging(config =>
+                {
+                    config.AddConsole();
+                    config.AddDebug();
+                    config.SetMinimumLevel(LogLevel.Debug);
+                });
                 services.Configure<ArduinoCloudClientOptions>(options =>
                 {
                     options.ClientId = Env.GetString("CLIENT_ID");
@@ -31,17 +47,18 @@ internal class Program
             var thingProperties = await arduinoCloudClient.GetThingPropertiesAsync(thingId);
             if (thingProperties is null)
             {
-                System.Console.WriteLine($"No properties for the Thing: {thingId}");
+                logger.LogError("No properties for the Thing: {thingId}", thingId);
                 return;
             }
 
             foreach (var property in thingProperties)
-                System.Console.WriteLine(
-                    $"Name: {property.Name}, Value: {property.LastValue}, Type: {property.Type}, Updated At: {property.ValueUpdatedAt}");
+                logger.LogInformation(
+                    "Name: {property.Name}, Value: {property.LastValue}, Type: {property.Type}, Updated At: {property.ValueUpdatedAt}",
+                    property.Name, property.LastValue, property.Type, property.ValueUpdatedAt);
         }
         catch (Exception ex)
         {
-            System.Console.WriteLine($"Failed to get thing properties: {ex.Message}");
+            logger.LogError("Failed to get thing properties: {ex.Message}", ex.Message);
         }
     }
 }
