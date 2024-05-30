@@ -1,6 +1,6 @@
 using Newtonsoft.Json;
 
-namespace ArduinoCloudConnector;
+namespace ArduinoCloudConnector.Models;
 
 public class ThingProperty(
     DateTime createdAt,

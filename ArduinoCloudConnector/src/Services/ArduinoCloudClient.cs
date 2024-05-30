@@ -1,13 +1,13 @@
 ﻿using System.Net;
 using System.Net.Http.Headers;
+using ArduinoCloudConnector.Models;
+using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 
-namespace ArduinoCloudConnector;
+namespace ArduinoCloudConnector.Services;
 
-public class ArduinoCloudClient(string clientId, string clientSecret)
+public class ArduinoCloudClient(HttpClient httpClient, IOptions<ArduinoCloudClientOptions> options)
 {
-    private readonly HttpClient _httpClient = new();
-
     private async Task<string> GetAccessTokenAsync()
     {
         const int retryCount = 3;
@@ -19,18 +19,23 @@ public class ArduinoCloudClient(string clientId, string clientSecret)
                 var tokenRequest =
                     new HttpRequestMessage(HttpMethod.Post, "https://api2.arduino.cc/iot/v1/clients/token");
 
-                var content = new FormUrlEncodedContent(new[]
+                if (options.Value is { ClientId: not null, ClientSecret: not null })
                 {
-                    new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                    new KeyValuePair<string, string>("client_id", clientId),
-                    new KeyValuePair<string, string>("client_secret", clientSecret),
-                    new KeyValuePair<string, string>("audience", "https://api2.arduino.cc/iot")
-                });
-                tokenRequest.Content = content;
-                tokenRequest.Content.Headers.ContentType =
-                    new MediaTypeHeaderValue("application/x-www-form-urlencoded");
+                    var content = new FormUrlEncodedContent(new[]
+                    {
+                        new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                        new KeyValuePair<string, string>("client_id", options.Value.ClientId),
+                        new KeyValuePair<string, string>("client_secret", options.Value.ClientSecret),
+                        new KeyValuePair<string, string>("audience", "https://api2.arduino.cc/iot")
+                    });
+                    tokenRequest.Content = content;
+                }
 
-                var response = await _httpClient.SendAsync(tokenRequest);
+                if (tokenRequest.Content != null)
+                    tokenRequest.Content.Headers.ContentType =
+                        new MediaTypeHeaderValue("application/x-www-form-urlencoded");
+
+                var response = await httpClient.SendAsync(tokenRequest);
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -77,7 +82,7 @@ public class ArduinoCloudClient(string clientId, string clientSecret)
         for (var i = 0; i < retryCount; i++)
             try
             {
-                Console.WriteLine($"Getting access token for clientId: {clientId}");
+                Console.WriteLine($"Getting access token for clientId: {options.Value.ClientId}");
                 var accessToken = await GetAccessTokenAsync();
                 Console.WriteLine($"Access token received: {accessToken}");
 
@@ -88,7 +93,7 @@ public class ArduinoCloudClient(string clientId, string clientSecret)
                 Console.WriteLine(
                     $"Sending request to URL: https://api2.arduino.cc/iot/v2/things/{thingId}/properties");
 
-                var response = await _httpClient.SendAsync(request);
+                var response = await httpClient.SendAsync(request);
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -124,4 +129,22 @@ public class ArduinoCloudClient(string clientId, string clientSecret)
 
         return null;
     }
+    
+    /*
+    // Better Code
+    TODO: Refactor Retry Logic: Move the retry logic to a separate method to avoid code duplication.
+    TODO: Improve Error Handling: Use specific exceptions for different error types to make error handling more granular.
+    TODO: Add Logging: Implement a logging mechanism instead of using Console.WriteLine.
+    TODO: Asynchronous Programming: Use Task.Delay instead of Thread.Sleep for asynchronous delay.
+    TODO: Dependency Injection: Allow injecting an HttpClient instance for easier testing.
+    TODO: Configuration: Use a configuration class or dependency injection for the client ID and secret.
+    // Adding features
+    TODO: CreateThingAsync: Create a new Thing in the Arduino IoT Cloud.
+    TODO: UpdateThingPropertyAsync: Update a specific property of a Thing.
+    TODO: DeleteThingAsync: Delete a Thing from the Arduino IoT Cloud.
+    TODO: GetThingAsync: Fetch details of a specific Thing.
+    TODO: ListThingsAsync: List all Things in the Arduino IoT Cloud.
+    TODO: CreateThingPropertyAsync: Create a new property for a Thing.
+    TODO: DeleteThingPropertyAsync: Delete a specific property from a Thing.
+    */
 }
