@@ -9,7 +9,7 @@ namespace ArduinoCloudConnector.Console;
 
 internal class Program
 {
-    public static async Task Main(string[] args)
+    public static async Task Main()
     {
         var loggerFactory = LoggerFactory.Create(
             builder => builder
@@ -23,6 +23,7 @@ internal class Program
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices((_, services) =>
             {
+                Env.Load();
                 services.AddHttpClient<ArduinoCloudClient>();
                 services.AddLogging(config =>
                 {
@@ -34,13 +35,13 @@ internal class Program
                 {
                     options.ClientId = Env.GetString("CLIENT_ID");
                     options.ClientSecret = Env.GetString("CLIENT_SECRET");
+                    options.RetryCount = 3;
+                    options.RetryDelay = 2000;
                 });
             })
             .Build();
-
-        Env.Load();
+        
         var thingId = Env.GetString("THING_ID");
-
         var arduinoCloudClient = host.Services.GetRequiredService<ArduinoCloudClient>();
         try
         {

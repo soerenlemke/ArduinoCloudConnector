@@ -9,15 +9,12 @@ namespace ArduinoCloudConnector.Services;
 
 public class ArduinoCloudClient(
     HttpClient httpClient,
-    IOptions<ArduinoCloudClientOptions> options,
-    ILogger<ArduinoCloudClient> logger)
+    ILogger<ArduinoCloudClient> logger,
+    IOptions<ArduinoCloudClientOptions> options)
 {
-    private const int RetryCount = 3;
-    private const int Delay = 2000;
-
     private async Task<string> GetAccessTokenAsync()
     {
-        for (var i = 0; i < RetryCount; i++)
+        for (var i = 0; i < options.Value.RetryCount; i++)
             try
             {
                 var tokenRequest =
@@ -49,7 +46,7 @@ public class ArduinoCloudClient(
                     if (response.StatusCode is HttpStatusCode.InternalServerError or HttpStatusCode.ServiceUnavailable)
                     {
                         logger.LogInformation("Server error. Retrying...");
-                        Thread.Sleep(Delay);
+                        Thread.Sleep(options.Value.RetryDelay);
                         continue;
                     }
 
@@ -65,8 +62,8 @@ public class ArduinoCloudClient(
             catch (Exception ex)
             {
                 logger.LogError("Error occurred: {ex.Message}", ex.Message);
-                if (i == RetryCount - 1) throw;
-                Thread.Sleep(Delay);
+                if (i == options.Value.RetryCount - 1) throw;
+                Thread.Sleep(options.Value.RetryDelay);
             }
 
         return string.Empty;
@@ -74,7 +71,7 @@ public class ArduinoCloudClient(
 
     public async Task<List<ThingProperty>?> GetThingPropertiesAsync(string thingId)
     {
-        for (var i = 0; i < RetryCount; i++)
+        for (var i = 0; i < options.Value.RetryCount; i++)
             try
             {
                 logger.LogInformation("Getting access token for clientId: {options.Value.ClientId}",
@@ -107,7 +104,7 @@ public class ArduinoCloudClient(
                         response.StatusCode == HttpStatusCode.ServiceUnavailable)
                     {
                         logger.LogInformation("Server error. Retrying...");
-                        Thread.Sleep(Delay);
+                        Thread.Sleep(options.Value.RetryDelay);
                         continue;
                     }
 
@@ -122,8 +119,8 @@ public class ArduinoCloudClient(
             catch (Exception ex)
             {
                 logger.LogError("Error occurred: {ex.Message}", ex.Message);
-                if (i == RetryCount - 1) throw;
-                Thread.Sleep(Delay);
+                if (i == options.Value.RetryCount - 1) throw;
+                Thread.Sleep(options.Value.RetryDelay);
             }
 
         return null;
