@@ -81,11 +81,8 @@ public class ArduinoCloudClient(
                 logger.LogError("Thing not found. Please check the thingId {ThingId} and ensure the thing exists in your Arduino Cloud.", thingId);
                 throw new NotFoundException($"Thing not found: {thingId}");
             }
-            else
-            {
-                logger.LogError("404 Not Found error. URL or resource might be incorrect or temporarily unavailable.");
-                throw new NotFoundException("404 Not Found error. URL or resource might be incorrect or temporarily unavailable.");
-            }
+            logger.LogError("404 Not Found error. URL or resource might be incorrect or temporarily unavailable.");
+            throw new NotFoundException("404 Not Found error. URL or resource might be incorrect or temporarily unavailable.");
 
         case HttpStatusCode.InternalServerError:
             logger.LogError("Internal Server Error. Please try again later.");
