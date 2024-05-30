@@ -46,7 +46,7 @@ public class ArduinoCloudClient(
                     if (response.StatusCode is HttpStatusCode.InternalServerError or HttpStatusCode.ServiceUnavailable)
                     {
                         logger.LogInformation("Server error. Retrying...");
-                        Thread.Sleep(options.Value.RetryDelay);
+                        await Task.Delay(options.Value.RetryDelay);
                         continue;
                     }
 
@@ -63,7 +63,7 @@ public class ArduinoCloudClient(
             {
                 logger.LogError("Error occurred: {ex.Message}", ex.Message);
                 if (i == options.Value.RetryCount - 1) throw;
-                Thread.Sleep(options.Value.RetryDelay);
+                await Task.Delay(options.Value.RetryDelay);
             }
 
         return string.Empty;
@@ -104,7 +104,7 @@ public class ArduinoCloudClient(
                         response.StatusCode == HttpStatusCode.ServiceUnavailable)
                     {
                         logger.LogInformation("Server error. Retrying...");
-                        Thread.Sleep(options.Value.RetryDelay);
+                        await Task.Delay(options.Value.RetryDelay);
                         continue;
                     }
 
@@ -120,7 +120,7 @@ public class ArduinoCloudClient(
             {
                 logger.LogError("Error occurred: {ex.Message}", ex.Message);
                 if (i == options.Value.RetryCount - 1) throw;
-                Thread.Sleep(options.Value.RetryDelay);
+                await Task.Delay(options.Value.RetryDelay);
             }
 
         return null;
@@ -130,8 +130,6 @@ public class ArduinoCloudClient(
     // Better Code
     TODO: Refactor Retry Logic: Move the retry logic to a separate method to avoid code duplication.
     TODO: Improve Error Handling: Use specific exceptions for different error types to make error handling more granular.
-    TODO: Add Logging: Implement a logging mechanism instead of using Console.WriteLine.
-    TODO: Asynchronous Programming: Use Task.Delay instead of Thread.Sleep for asynchronous delay.
     // Adding features
     TODO: CreateThingAsync: Create a new Thing in the Arduino IoT Cloud.
     TODO: UpdateThingPropertyAsync: Update a specific property of a Thing.
