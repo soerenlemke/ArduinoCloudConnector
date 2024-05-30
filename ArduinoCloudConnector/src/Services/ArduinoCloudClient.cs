@@ -36,22 +36,8 @@ public class ArduinoCloudClient(
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    var errorResponse = await response.Content.ReadAsStringAsync();
-                    logger.LogError("Request failed with status code {response.StatusCode}: {errorResponse}",
-                        response.StatusCode, errorResponse);
-
-                    if (response.StatusCode == HttpStatusCode.NotFound)
-                        logger.LogError(
-                            "404 Not Found error. URL or resource might be incorrect or temporarily unavailable.");
-                    if (response.StatusCode is HttpStatusCode.InternalServerError or HttpStatusCode.ServiceUnavailable)
-                    {
-                        logger.LogInformation("Server error. Retrying...");
-                        await Task.Delay(options.Value.RetryDelay);
-                        continue;
-                    }
-
-                    throw new HttpRequestException(
-                        $"Request failed with status code {response.StatusCode}: {errorResponse}");
+                    await HandleUnsuccessfulResponseAsync(response, i);
+                    continue;
                 }
 
                 var responseBody = await response.Content.ReadAsStringAsync();
@@ -90,26 +76,8 @@ public class ArduinoCloudClient(
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    var errorResponse = await response.Content.ReadAsStringAsync();
-                    logger.LogError("Request failed with status code {response.StatusCode}: {errorResponse}",
-                        response.StatusCode,
-                        errorResponse);
-
-                    if (response.StatusCode == HttpStatusCode.NotFound)
-                        logger.LogError(
-                            "Thing not found. Please check the thingId {thingId} and ensure the thing exists in your Arduino Cloud.",
-                            thingId);
-
-                    if (response.StatusCode == HttpStatusCode.InternalServerError ||
-                        response.StatusCode == HttpStatusCode.ServiceUnavailable)
-                    {
-                        logger.LogInformation("Server error. Retrying...");
-                        await Task.Delay(options.Value.RetryDelay);
-                        continue;
-                    }
-
-                    throw new HttpRequestException(
-                        $"Request failed with status code {response.StatusCode}: {errorResponse}");
+                    await HandleUnsuccessfulResponseAsync(response, i, thingId);
+                    continue;
                 }
 
                 var responseBody = await response.Content.ReadAsStringAsync();
@@ -124,6 +92,39 @@ public class ArduinoCloudClient(
             }
 
         return null;
+    }
+    
+    private async Task HandleUnsuccessfulResponseAsync(HttpResponseMessage response, int attempt, string? thingId = null)
+    {
+        var errorResponse = await response.Content.ReadAsStringAsync();
+        logger.LogError("Request failed with status code {StatusCode}: {ErrorResponse}", response.StatusCode, errorResponse);
+
+        switch (response.StatusCode)
+        {
+            case HttpStatusCode.NotFound:
+                if (thingId != null)
+                {
+                    logger.LogError("Thing not found. Please check the thingId {ThingId} and ensure the thing exists in your Arduino Cloud.", thingId);
+                }
+                else
+                {
+                    logger.LogError("404 Not Found error. URL or resource might be incorrect or temporarily unavailable.");
+                }
+                break;
+
+            case HttpStatusCode.InternalServerError or HttpStatusCode.ServiceUnavailable:
+                logger.LogInformation("Server error. Retrying...");
+                await Task.Delay(options.Value.RetryDelay);
+                break;
+
+            default:
+                throw new HttpRequestException($"Request failed with status code {response.StatusCode}: {errorResponse}");
+        }
+
+        if (attempt == options.Value.RetryCount - 1)
+        {
+            throw new HttpRequestException($"Request failed after {attempt + 1} attempts: {errorResponse}");
+        }
     }
 
     /*
