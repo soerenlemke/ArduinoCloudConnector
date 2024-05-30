@@ -1,103 +1,78 @@
 ﻿using System.Net;
 using System.Net.Http.Headers;
+using ArduinoCloudConnector.Exceptions;
 using ArduinoCloudConnector.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
+using Polly;
 
 namespace ArduinoCloudConnector.Services;
 
 public class ArduinoCloudClient(
     HttpClient httpClient,
     ILogger<ArduinoCloudClient> logger,
-    IOptions<ArduinoCloudClientOptions> options)
+    IOptions<ArduinoCloudClientOptions> options,
+    IRetryPolicyProvider retryPolicyProvider)
 {
+    private readonly IAsyncPolicy<HttpResponseMessage> _retryPolicy = retryPolicyProvider.GetRetryPolicy();
+
     private async Task<string> GetAccessTokenAsync()
     {
-        for (var i = 0; i < options.Value.RetryCount; i++)
-            try
+        var response = await _retryPolicy.ExecuteAsync(async () =>
+        {
+            var tokenRequest = new HttpRequestMessage(HttpMethod.Post, "https://api2.arduino.cc/iot/v1/clients/token");
+            var content = new FormUrlEncodedContent(new[]
             {
-                var tokenRequest =
-                    new HttpRequestMessage(HttpMethod.Post, "https://api2.arduino.cc/iot/v1/clients/token");
-                var content = new FormUrlEncodedContent(new[]
-                {
-                    new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                    new KeyValuePair<string, string>("client_id", options.Value.ClientId),
-                    new KeyValuePair<string, string>("client_secret", options.Value.ClientSecret),
-                    new KeyValuePair<string, string>("audience", "https://api2.arduino.cc/iot")
-                });
-                tokenRequest.Content = content;
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("client_id", options.Value.ClientId),
+                new KeyValuePair<string, string>("client_secret", options.Value.ClientSecret),
+                new KeyValuePair<string, string>("audience", "https://api2.arduino.cc/iot")
+            });
+            tokenRequest.Content = content;
+            tokenRequest.Content.Headers.ContentType = new MediaTypeHeaderValue("application/x-www-form-urlencoded");
 
-                if (tokenRequest.Content != null)
-                    tokenRequest.Content.Headers.ContentType =
-                        new MediaTypeHeaderValue("application/x-www-form-urlencoded");
+            return await httpClient.SendAsync(tokenRequest);
+        });
 
-                var response = await httpClient.SendAsync(tokenRequest);
+        if (!response.IsSuccessStatusCode)
+        {
+            await HandleUnsuccessfulResponseAsync(response);
+        }
 
-                if (!response.IsSuccessStatusCode)
-                {
-                    await HandleUnsuccessfulResponseAsync(response, i);
-                    continue;
-                }
+        var responseBody = await response.Content.ReadAsStringAsync();
+        var tokenResponse = JsonConvert.DeserializeObject<TokenResponse>(responseBody);
 
-                var responseBody = await response.Content.ReadAsStringAsync();
-                var tokenResponse = JsonConvert.DeserializeObject<TokenResponse>(responseBody);
-
-                return tokenResponse?.AccessToken ?? string.Empty;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError("Error occurred: {ex.Message}", ex.Message);
-                if (i == options.Value.RetryCount - 1) throw;
-                await Task.Delay(options.Value.RetryDelay);
-            }
-
-        return string.Empty;
+        return tokenResponse?.AccessToken ?? string.Empty;
     }
 
     public async Task<List<ThingProperty>?> GetThingPropertiesAsync(string thingId)
     {
-        for (var i = 0; i < options.Value.RetryCount; i++)
-            try
-            {
-                logger.LogInformation("Getting access token for clientId: {options.Value.ClientId}",
-                    options.Value.ClientId);
-                var accessToken = await GetAccessTokenAsync();
-                logger.LogInformation("Access token received: {accessToken}", accessToken);
+        var accessToken = await GetAccessTokenAsync();
+        logger.LogInformation("Access token received: {accessToken}", accessToken);
 
-                var request = new HttpRequestMessage(HttpMethod.Get,
-                    $"https://api2.arduino.cc/iot/v2/things/{thingId}/properties");
-                request.Headers.Add("Authorization", $"Bearer {accessToken}");
+        var response = await _retryPolicy.ExecuteAsync(async () =>
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, $"https://api2.arduino.cc/iot/v2/things/{thingId}/properties");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
-                logger.LogInformation(
-                    "Sending request to URL: https://api2.arduino.cc/iot/v2/things/{thingId}/properties", thingId);
+            return await httpClient.SendAsync(request);
+        });
 
-                var response = await httpClient.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            await HandleUnsuccessfulResponseAsync(response, thingId);
+        }
 
-                if (!response.IsSuccessStatusCode)
-                {
-                    await HandleUnsuccessfulResponseAsync(response, i, thingId);
-                    continue;
-                }
-
-                var responseBody = await response.Content.ReadAsStringAsync();
-                var thingProperties = JsonConvert.DeserializeObject<List<ThingProperty>>(responseBody);
-                return thingProperties;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError("Error occurred: {ex.Message}", ex.Message);
-                if (i == options.Value.RetryCount - 1) throw;
-                await Task.Delay(options.Value.RetryDelay);
-            }
-
-        return null;
+        var responseBody = await response.Content.ReadAsStringAsync();
+        return JsonConvert.DeserializeObject<List<ThingProperty>>(responseBody);
     }
-    
-    private async Task HandleUnsuccessfulResponseAsync(HttpResponseMessage response, int attempt, string? thingId = null)
+
+    private async Task HandleUnsuccessfulResponseAsync(HttpResponseMessage response, string? thingId = null)
     {
         var errorResponse = await response.Content.ReadAsStringAsync();
-        logger.LogError("Request failed with status code {StatusCode}: {ErrorResponse}", response.StatusCode, errorResponse);
+        logger.LogError("Request failed with status code {StatusCode}: {ErrorResponse}", response.StatusCode,
+            errorResponse);
 
         switch (response.StatusCode)
         {
@@ -105,32 +80,28 @@ public class ArduinoCloudClient(
                 if (thingId != null)
                 {
                     logger.LogError("Thing not found. Please check the thingId {ThingId} and ensure the thing exists in your Arduino Cloud.", thingId);
+                    throw new NotFoundException($"Thing not found: {thingId}");
                 }
                 else
                 {
                     logger.LogError("404 Not Found error. URL or resource might be incorrect or temporarily unavailable.");
+                    throw new NotFoundException("404 Not Found error. URL or resource might be incorrect or temporarily unavailable.");
                 }
-                break;
 
-            case HttpStatusCode.InternalServerError or HttpStatusCode.ServiceUnavailable:
+            case HttpStatusCode.InternalServerError:
                 logger.LogInformation("Server error. Retrying...");
-                await Task.Delay(options.Value.RetryDelay);
-                break;
+                throw new InternalServerErrorException("Internal Server Error. Please try again later.");
+
+            case HttpStatusCode.ServiceUnavailable:
+                logger.LogInformation("Service unavailable. Retrying...");
+                throw new ServiceUnavailableException("Service Unavailable. Please try again later.");
 
             default:
                 throw new HttpRequestException($"Request failed with status code {response.StatusCode}: {errorResponse}");
         }
-
-        if (attempt == options.Value.RetryCount - 1)
-        {
-            throw new HttpRequestException($"Request failed after {attempt + 1} attempts: {errorResponse}");
-        }
     }
 
     /*
-    // Better Code
-    TODO: Refactor Retry Logic: Move the retry logic to a separate method to avoid code duplication.
-    TODO: Improve Error Handling: Use specific exceptions for different error types to make error handling more granular.
     // Adding features
     TODO: CreateThingAsync: Create a new Thing in the Arduino IoT Cloud.
     TODO: UpdateThingPropertyAsync: Update a specific property of a Thing.

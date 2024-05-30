@@ -11,20 +11,18 @@ internal class Program
 {
     public static async Task Main()
     {
-        var loggerFactory = LoggerFactory.Create(
-            builder => builder
-                .AddConsole()
-                .AddDebug()
-                .SetMinimumLevel(LogLevel.Debug)
-        );
-        var logger = loggerFactory.CreateLogger<Program>();
+        Env.Load();
 
-        
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices((_, services) =>
             {
-                Env.Load();
-                services.AddHttpClient<ArduinoCloudClient>();
+                services.AddHttpClient<ArduinoCloudClient>()
+                    .AddPolicyHandler((provider, _) =>
+                    {
+                        var retryPolicyProvider = provider.GetRequiredService<IRetryPolicyProvider>();
+                        return retryPolicyProvider.GetRetryPolicy();
+                    });
+                services.AddTransient<IRetryPolicyProvider, RetryPolicyProvider>();
                 services.AddLogging(config =>
                 {
                     config.AddConsole();
@@ -40,11 +38,16 @@ internal class Program
                 });
             })
             .Build();
-        
-        var thingId = Env.GetString("THING_ID");
-        var arduinoCloudClient = host.Services.GetRequiredService<ArduinoCloudClient>();
+
+        using var serviceScope = host.Services.CreateScope();
+        var services = serviceScope.ServiceProvider;
+
+        var arduinoCloudClient = services.GetRequiredService<ArduinoCloudClient>();
+        var logger = services.GetRequiredService<ILogger<Program>>();
+
         try
         {
+            var thingId = Env.GetString("THING_ID");
             var thingProperties = await arduinoCloudClient.GetThingPropertiesAsync(thingId);
             if (thingProperties is null)
             {
@@ -53,13 +56,15 @@ internal class Program
             }
 
             foreach (var property in thingProperties)
+            {
                 logger.LogInformation(
-                    "Name: {property.Name}, Value: {property.LastValue}, Type: {property.Type}, Updated At: {property.ValueUpdatedAt}",
+                    "Name: {Name}, Value: {Value}, Type: {Type}, Updated At: {UpdatedAt}",
                     property.Name, property.LastValue, property.Type, property.ValueUpdatedAt);
+            }
         }
         catch (Exception ex)
         {
-            logger.LogError("Failed to get thing properties: {ex.Message}", ex.Message);
+            logger.LogError("Failed to get thing properties: {Message}", ex.Message);
         }
     }
 }
