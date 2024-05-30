@@ -129,7 +129,7 @@ public class ArduinoCloudClient(HttpClient httpClient, IOptions<ArduinoCloudClie
 
         return null;
     }
-    
+
     /*
     // Better Code
     TODO: Refactor Retry Logic: Move the retry logic to a separate method to avoid code duplication.

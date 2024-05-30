@@ -1,9 +1,8 @@
 ﻿using ArduinoCloudConnector.Models;
 using ArduinoCloudConnector.Services;
 using DotNetEnv;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
-
+using Microsoft.Extensions.Hosting;
 
 namespace ArduinoCloudConnector.Console;
 
@@ -22,10 +21,8 @@ internal class Program
                 });
             })
             .Build();
-        
+
         Env.Load();
-        var clientId = Env.GetString("CLIENT_ID");
-        var clientSecret = Env.GetString("CLIENT_SECRET");
         var thingId = Env.GetString("THING_ID");
 
         var arduinoCloudClient = host.Services.GetRequiredService<ArduinoCloudClient>();
