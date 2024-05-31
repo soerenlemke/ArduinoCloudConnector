@@ -16,9 +16,17 @@ public class ArduinoCloudClient(
     IRetryPolicyProvider retryPolicyProvider)
 {
     private readonly IAsyncPolicy<HttpResponseMessage> _retryPolicy = retryPolicyProvider.GetRetryPolicy();
+    private string? _accessToken;
+    private DateTime _accessTokenExpiration;
+    private const int TokenExpirationTimeInSeconds = 3600;
 
     private async Task<string> GetAccessTokenAsync()
     {
+        if (!string.IsNullOrEmpty(_accessToken) && DateTime.UtcNow < _accessTokenExpiration)
+        {
+            return _accessToken;
+        }
+        
         var response = await _retryPolicy.ExecuteAsync(async () =>
         {
             var tokenRequest = new HttpRequestMessage(HttpMethod.Post, "https://api2.arduino.cc/iot/v1/clients/token");
@@ -40,13 +48,16 @@ public class ArduinoCloudClient(
         var responseBody = await response.Content.ReadAsStringAsync();
         var tokenResponse = JsonConvert.DeserializeObject<TokenResponse>(responseBody);
 
-        return tokenResponse?.AccessToken ?? string.Empty;
+        _accessToken = tokenResponse?.AccessToken ?? string.Empty;
+        _accessTokenExpiration = DateTime.UtcNow.AddSeconds(TokenExpirationTimeInSeconds);
+        
+        logger.LogInformation("Access token received: {accessToken}", _accessToken);
+        return _accessToken;
     }
 
     public async Task<List<ThingProperty>?> GetThingPropertiesAsync(string thingId)
     {
         var accessToken = await GetAccessTokenAsync();
-        logger.LogInformation("Access token received: {accessToken}", accessToken);
 
         var response = await _retryPolicy.ExecuteAsync(async () =>
         {
@@ -66,7 +77,6 @@ public class ArduinoCloudClient(
     public async Task<ThingProperty?> UpdateThingPropertyAsync(string thingId, string propertyId)
     {
         var accessToken = await GetAccessTokenAsync();
-        logger.LogInformation("Access token received: {accessToken}", accessToken);
         
         var response = await _retryPolicy.ExecuteAsync(async () =>
         {
