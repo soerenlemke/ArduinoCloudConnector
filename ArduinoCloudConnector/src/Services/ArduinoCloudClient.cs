@@ -62,6 +62,26 @@ public class ArduinoCloudClient(
         var responseBody = await response.Content.ReadAsStringAsync();
         return JsonConvert.DeserializeObject<List<ThingProperty>>(responseBody);
     }
+    
+    public async Task<ThingProperty?> UpdateThingPropertyAsync(string thingId, string propertyId)
+    {
+        var accessToken = await GetAccessTokenAsync();
+        logger.LogInformation("Access token received: {accessToken}", accessToken);
+        
+        var response = await _retryPolicy.ExecuteAsync(async () =>
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get,
+                $"https://api2.arduino.cc/iot/v2/things/{thingId}/properties/{propertyId}");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+            return await httpClient.SendAsync(request);
+        });
+        
+        if (!response.IsSuccessStatusCode) await HandleUnsuccessfulResponseAsync(response);
+        
+        var responseBody = await response.Content.ReadAsStringAsync();
+        return JsonConvert.DeserializeObject<ThingProperty>(responseBody);
+    }
 
     private async Task HandleUnsuccessfulResponseAsync(HttpResponseMessage response, string? thingId = null)
     {
@@ -138,7 +158,6 @@ public class ArduinoCloudClient(
     /*
     // Adding features
     TODO: CreateThingAsync: Create a new Thing in the Arduino IoT Cloud.
-    TODO: UpdateThingPropertyAsync: Update a specific property of a Thing.
     TODO: DeleteThingAsync: Delete a Thing from the Arduino IoT Cloud.
     TODO: GetThingAsync: Fetch details of a specific Thing.
     TODO: ListThingsAsync: List all Things in the Arduino IoT Cloud.

@@ -44,7 +44,8 @@ internal class Program
 
         var arduinoCloudClient = services.GetRequiredService<ArduinoCloudClient>();
         var logger = services.GetRequiredService<ILogger<Program>>();
-
+        
+        // Get all properties of a given Thing
         try
         {
             var thingId = Env.GetString("THING_ID");
@@ -58,13 +59,30 @@ internal class Program
             foreach (var property in thingProperties)
             {
                 logger.LogInformation(
-                    "Name: {Name}, Value: {Value}, Type: {Type}, Updated At: {UpdatedAt}",
-                    property.Name, property.LastValue, property.Type, property.ValueUpdatedAt);
+                    "ID: {Id}, Name: {Name}, Value: {Value}, Type: {Type}, Updated At: {ValueUpdatedAt}",
+                    property.Id, property.Name, property.LastValue, property.Type, property.ValueUpdatedAt);
             }
         }
         catch (Exception ex)
         {
             logger.LogError("Failed to get thing properties: {Message}", ex.Message);
         }
+        
+        // request a single property
+        try
+        {
+            var thingId = Env.GetString("THING_ID");
+            var propertyId = Env.GetString("PROPERTY_ID_1");
+            var thingProperty = await arduinoCloudClient.UpdateThingPropertyAsync(thingId, propertyId);
+            if (thingProperty != null)
+            {
+                logger.LogInformation("{Name} = {LastValue}", thingProperty.Name ,thingProperty.LastValue);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError("Failed to request the property: {Message}", ex.Message);
+        }
+        
     }
 }
