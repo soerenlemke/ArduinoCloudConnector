@@ -1,12 +1,12 @@
 ﻿using System.Net;
 using System.Net.Http.Headers;
+using System.Text.Json;
 using ArduinoCloudConnector.Exceptions;
 using ArduinoCloudConnector.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using Polly;
-using System.Text.Json;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace ArduinoCloudConnector.Services;
@@ -17,50 +17,30 @@ public class ArduinoCloudClient(
     IOptions<ArduinoCloudClientOptions> options,
     IRetryPolicyProvider retryPolicyProvider)
 {
+    private const int TokenExpirationTimeInSeconds = 3600;
     private readonly IAsyncPolicy<HttpResponseMessage> _retryPolicy = retryPolicyProvider.GetRetryPolicy();
     private string? _accessToken;
     private DateTime _accessTokenExpiration;
-    private const int TokenExpirationTimeInSeconds = 3600;
 
-    private async Task<string> GetAccessTokenAsync()
+    public async Task<List<Thing>?> GetThingsAsync()
     {
-        var localTokenData = await LoadAccessTokenLocal();
-        if (!string.IsNullOrEmpty(localTokenData?.AccessToken) && DateTime.UtcNow < localTokenData.TokenExpiration)
-        {
-            return localTokenData.AccessToken;
-        }
+        var accessToken = await GetAccessTokenAsync();
         
-        if (!string.IsNullOrEmpty(_accessToken) && DateTime.UtcNow < _accessTokenExpiration) return _accessToken;
-
         var response = await _retryPolicy.ExecuteAsync(async () =>
         {
-            var tokenRequest = new HttpRequestMessage(HttpMethod.Post, "https://api2.arduino.cc/iot/v1/clients/token");
-            var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("client_id", options.Value.ClientId),
-                new KeyValuePair<string, string>("client_secret", options.Value.ClientSecret),
-                new KeyValuePair<string, string>("audience", "https://api2.arduino.cc/iot")
-            });
-            tokenRequest.Content = content;
-            tokenRequest.Content.Headers.ContentType = new MediaTypeHeaderValue("application/x-www-form-urlencoded");
+            var request = new HttpRequestMessage(HttpMethod.Get,
+                $"https://api2.arduino.cc/iot/v2/things");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
-            return await httpClient.SendAsync(tokenRequest);
+            return await httpClient.SendAsync(request);
         });
-
+        
         if (!response.IsSuccessStatusCode) await HandleUnsuccessfulResponseAsync(response);
-
+        
         var responseBody = await response.Content.ReadAsStringAsync();
-        var tokenResponse = JsonConvert.DeserializeObject<TokenResponse>(responseBody);
-
-        _accessToken = tokenResponse?.AccessToken ?? string.Empty;
-        _accessTokenExpiration = DateTime.UtcNow.AddSeconds(TokenExpirationTimeInSeconds);
-        SaveAccessTokenLocal(_accessToken, _accessTokenExpiration);
-
-        logger.LogInformation("Access token received: {accessToken}", _accessToken);
-        return _accessToken;
+        return JsonConvert.DeserializeObject<List<Thing>>(responseBody);
     }
-    
+
     public async Task<List<ThingProperty>?> GetThingPropertiesAsync(string thingId)
     {
         var accessToken = await GetAccessTokenAsync();
@@ -97,6 +77,85 @@ public class ArduinoCloudClient(
 
         var responseBody = await response.Content.ReadAsStringAsync();
         return JsonConvert.DeserializeObject<ThingProperty>(responseBody);
+    }
+
+    private async Task<string> GetAccessTokenAsync()
+    {
+        var localTokenData = await LoadAccessTokenLocal();
+        if (!string.IsNullOrEmpty(localTokenData?.AccessToken) && DateTime.UtcNow < localTokenData.TokenExpiration)
+            return localTokenData.AccessToken;
+
+        if (!string.IsNullOrEmpty(_accessToken) && DateTime.UtcNow < _accessTokenExpiration) return _accessToken;
+
+        var response = await _retryPolicy.ExecuteAsync(async () =>
+        {
+            var tokenRequest = new HttpRequestMessage(HttpMethod.Post, "https://api2.arduino.cc/iot/v1/clients/token");
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("client_id", options.Value.ClientId),
+                new KeyValuePair<string, string>("client_secret", options.Value.ClientSecret),
+                new KeyValuePair<string, string>("audience", "https://api2.arduino.cc/iot")
+            });
+            tokenRequest.Content = content;
+            tokenRequest.Content.Headers.ContentType = new MediaTypeHeaderValue("application/x-www-form-urlencoded");
+
+            return await httpClient.SendAsync(tokenRequest);
+        });
+
+        if (!response.IsSuccessStatusCode) await HandleUnsuccessfulResponseAsync(response);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        var tokenResponse = JsonConvert.DeserializeObject<TokenResponse>(responseBody);
+
+        _accessToken = tokenResponse?.AccessToken ?? string.Empty;
+        _accessTokenExpiration = DateTime.UtcNow.AddSeconds(TokenExpirationTimeInSeconds);
+        SaveAccessTokenLocal(_accessToken, _accessTokenExpiration);
+
+        logger.LogInformation("Access token received: {accessToken}", _accessToken);
+        return _accessToken;
+    }
+
+    private async Task<TokenData?> LoadAccessTokenLocal()
+    {
+        try
+        {
+            var jsonFileName = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AccessToken.json");
+            if (!File.Exists(jsonFileName)) return null;
+
+            var localTokenData = await File.ReadAllTextAsync(jsonFileName);
+            return JsonSerializer.Deserialize<TokenData>(localTokenData);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError("Error saving the access token locally: {errorMessage}", ex.Message);
+        }
+
+        return null;
+    }
+
+    private void SaveAccessTokenLocal(string accessToken, DateTime tokenExpiration)
+    {
+        try
+        {
+            var jsonFileName = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AccessToken.json");
+
+            if (!File.Exists(jsonFileName)) File.Create(jsonFileName).Dispose();
+
+            var tokenData = new
+            {
+                AccessToken = accessToken,
+                TokenExpiration = tokenExpiration
+            };
+
+            var jsonSerializerOptions = new JsonSerializerOptions { WriteIndented = true };
+            var jsonStringToken = JsonSerializer.Serialize(tokenData, jsonSerializerOptions);
+            File.WriteAllText(jsonFileName, jsonStringToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError("Error saving the access token locally: {errorMessage}", ex.Message);
+        }
     }
 
     private async Task HandleUnsuccessfulResponseAsync(HttpResponseMessage response, string? thingId = null)
@@ -170,58 +229,11 @@ public class ArduinoCloudClient(
                     $"Request failed with status code {response.StatusCode}: {errorResponse}");
         }
     }
-    
-    private async Task<TokenData?> LoadAccessTokenLocal()
-    {
-        try
-        {
-            var jsonFileName = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AccessToken.json");
-            if (!File.Exists(jsonFileName)) return null;
-        
-            var localTokenData = await File.ReadAllTextAsync(jsonFileName);
-            return JsonSerializer.Deserialize<TokenData>(localTokenData);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError("Error saving the access token locally: {errorMessage}", ex.Message);
-        }
-
-        return null;
-    }
-    
-    private void SaveAccessTokenLocal(string accessToken, DateTime tokenExpiration)
-    {
-        try
-        {
-            var jsonFileName = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AccessToken.json");
-
-            if (!File.Exists(jsonFileName))
-            {
-                File.Create(jsonFileName).Dispose();
-            }
-
-            var tokenData = new
-            {
-                AccessToken = accessToken,
-                TokenExpiration = tokenExpiration
-            };
-            
-            var jsonSerializerOptions = new JsonSerializerOptions { WriteIndented = true };
-            var jsonStringToken = JsonSerializer.Serialize(tokenData, jsonSerializerOptions);
-            File.WriteAllText(jsonFileName, jsonStringToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError("Error saving the access token locally: {errorMessage}", ex.Message);
-        }
-    }
-
 
     /*
     // Adding features
     TODO: CreateThingAsync: Create a new Thing in the Arduino IoT Cloud.
     TODO: DeleteThingAsync: Delete a Thing from the Arduino IoT Cloud.
-    TODO: GetThingAsync: Fetch details of a specific Thing.
     TODO: ListThingsAsync: List all Things in the Arduino IoT Cloud.
     TODO: CreateThingPropertyAsync: Create a new property for a Thing.
     TODO: DeleteThingPropertyAsync: Delete a specific property from a Thing.

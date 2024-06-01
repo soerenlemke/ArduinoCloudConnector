@@ -55,8 +55,3 @@ public class ThingProperty(
 
     [JsonProperty("variable_name")] public string VariableName { get; set; } = variableName;
 }
-
-public class ThingPropertiesResponse(List<ThingProperty> properties)
-{
-    [JsonProperty("properties")] public List<ThingProperty> Properties { get; set; } = properties;
-}

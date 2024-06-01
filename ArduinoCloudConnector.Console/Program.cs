@@ -4,6 +4,7 @@ using DotNetEnv;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace ArduinoCloudConnector.Console;
 
@@ -44,7 +45,29 @@ internal class Program
 
         var arduinoCloudClient = services.GetRequiredService<ArduinoCloudClient>();
         var logger = services.GetRequiredService<ILogger<Program>>();
-        
+
+        // Get all things of user
+        try
+        {
+            var things = await arduinoCloudClient.GetThingsAsync();
+            if (things is null)
+            {
+                var options = services.GetRequiredService<IOptions<ArduinoCloudClientOptions>>();
+                logger.LogError("No things for the user with client Id: {clientId}", options.Value.ClientId);
+                return;
+            }
+
+            foreach (var thing in things)
+                logger.LogInformation(
+                    "DeviceId: {DeviceId}, Id: {Id}, Name: {Name}, Properties: {Properties}, Tags: {Tags}, Timezone: {Timezone}, WebhookActive: {WebhookActive}, WebhookUri: {WebhookUri}",
+                    thing.DeviceId, thing.Id, thing.Name, thing.Properties, thing.Tags, thing.Timezone,
+                    thing.WebhookActive, thing.WebhookUri);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError("Failed to get things: {Message}", ex.Message);
+        }
+
         // Get all properties of a given Thing
         try
         {
@@ -57,17 +80,15 @@ internal class Program
             }
 
             foreach (var property in thingProperties)
-            {
                 logger.LogInformation(
                     "ID: {Id}, Name: {Name}, Value: {Value}, Type: {Type}, Updated At: {ValueUpdatedAt}",
                     property.Id, property.Name, property.LastValue, property.Type, property.ValueUpdatedAt);
-            }
         }
         catch (Exception ex)
         {
             logger.LogError("Failed to get thing properties: {Message}", ex.Message);
         }
-        
+
         // request a single property
         try
         {
@@ -75,14 +96,11 @@ internal class Program
             var propertyId = Env.GetString("PROPERTY_ID_1");
             var thingProperty = await arduinoCloudClient.UpdateThingPropertyAsync(thingId, propertyId);
             if (thingProperty != null)
-            {
-                logger.LogInformation("{Name} = {LastValue}", thingProperty.Name ,thingProperty.LastValue);
-            }
+                logger.LogInformation("{Name} = {LastValue}", thingProperty.Name, thingProperty.LastValue);
         }
         catch (Exception ex)
         {
             logger.LogError("Failed to request the property: {Message}", ex.Message);
         }
-        
     }
 }
