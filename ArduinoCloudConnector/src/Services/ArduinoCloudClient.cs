@@ -6,6 +6,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using Polly;
+using System.Text.Json;
+using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace ArduinoCloudConnector.Services;
 
@@ -22,11 +24,14 @@ public class ArduinoCloudClient(
 
     private async Task<string> GetAccessTokenAsync()
     {
-        if (!string.IsNullOrEmpty(_accessToken) && DateTime.UtcNow < _accessTokenExpiration)
+        var localTokenData = await LoadAccessTokenLocal();
+        if (!string.IsNullOrEmpty(localTokenData?.AccessToken) && DateTime.UtcNow < localTokenData.TokenExpiration)
         {
-            return _accessToken;
+            return localTokenData.AccessToken;
         }
         
+        if (!string.IsNullOrEmpty(_accessToken) && DateTime.UtcNow < _accessTokenExpiration) return _accessToken;
+
         var response = await _retryPolicy.ExecuteAsync(async () =>
         {
             var tokenRequest = new HttpRequestMessage(HttpMethod.Post, "https://api2.arduino.cc/iot/v1/clients/token");
@@ -50,11 +55,12 @@ public class ArduinoCloudClient(
 
         _accessToken = tokenResponse?.AccessToken ?? string.Empty;
         _accessTokenExpiration = DateTime.UtcNow.AddSeconds(TokenExpirationTimeInSeconds);
-        
+        SaveAccessTokenLocal(_accessToken, _accessTokenExpiration);
+
         logger.LogInformation("Access token received: {accessToken}", _accessToken);
         return _accessToken;
     }
-
+    
     public async Task<List<ThingProperty>?> GetThingPropertiesAsync(string thingId)
     {
         var accessToken = await GetAccessTokenAsync();
@@ -73,11 +79,11 @@ public class ArduinoCloudClient(
         var responseBody = await response.Content.ReadAsStringAsync();
         return JsonConvert.DeserializeObject<List<ThingProperty>>(responseBody);
     }
-    
+
     public async Task<ThingProperty?> UpdateThingPropertyAsync(string thingId, string propertyId)
     {
         var accessToken = await GetAccessTokenAsync();
-        
+
         var response = await _retryPolicy.ExecuteAsync(async () =>
         {
             var request = new HttpRequestMessage(HttpMethod.Get,
@@ -86,9 +92,9 @@ public class ArduinoCloudClient(
 
             return await httpClient.SendAsync(request);
         });
-        
+
         if (!response.IsSuccessStatusCode) await HandleUnsuccessfulResponseAsync(response);
-        
+
         var responseBody = await response.Content.ReadAsStringAsync();
         return JsonConvert.DeserializeObject<ThingProperty>(responseBody);
     }
@@ -164,6 +170,52 @@ public class ArduinoCloudClient(
                     $"Request failed with status code {response.StatusCode}: {errorResponse}");
         }
     }
+    
+    private async Task<TokenData?> LoadAccessTokenLocal()
+    {
+        try
+        {
+            var jsonFileName = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AccessToken.json");
+            if (!File.Exists(jsonFileName)) return null;
+        
+            var localTokenData = await File.ReadAllTextAsync(jsonFileName);
+            return JsonSerializer.Deserialize<TokenData>(localTokenData);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError("Error saving the access token locally: {errorMessage}", ex.Message);
+        }
+
+        return null;
+    }
+    
+    private void SaveAccessTokenLocal(string accessToken, DateTime tokenExpiration)
+    {
+        try
+        {
+            var jsonFileName = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AccessToken.json");
+
+            if (!File.Exists(jsonFileName))
+            {
+                File.Create(jsonFileName).Dispose();
+            }
+
+            var tokenData = new
+            {
+                AccessToken = accessToken,
+                TokenExpiration = tokenExpiration
+            };
+            
+            var jsonSerializerOptions = new JsonSerializerOptions { WriteIndented = true };
+            var jsonStringToken = JsonSerializer.Serialize(tokenData, jsonSerializerOptions);
+            File.WriteAllText(jsonFileName, jsonStringToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError("Error saving the access token locally: {errorMessage}", ex.Message);
+        }
+    }
+
 
     /*
     // Adding features
