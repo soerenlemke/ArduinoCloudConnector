@@ -24,6 +24,8 @@ internal class Program
                         return retryPolicyProvider.GetRetryPolicy();
                     });
                 services.AddTransient<IRetryPolicyProvider, RetryPolicyProvider>();
+                services.AddTransient<IResponseHandler, ResponseHandler>();
+                services.AddTransient<ITokenManagementService, TokenManagementService>();
                 services.AddLogging(config =>
                 {
                     config.AddConsole();

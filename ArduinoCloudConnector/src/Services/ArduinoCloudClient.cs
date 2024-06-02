@@ -1,49 +1,40 @@
-﻿using System.Net;
-using System.Net.Http.Headers;
-using System.Text.Json;
-using ArduinoCloudConnector.Exceptions;
+﻿using System.Net.Http.Headers;
 using ArduinoCloudConnector.Models;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using Polly;
-using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace ArduinoCloudConnector.Services;
 
 public class ArduinoCloudClient(
     HttpClient httpClient,
-    ILogger<ArduinoCloudClient> logger,
-    IOptions<ArduinoCloudClientOptions> options,
-    IRetryPolicyProvider retryPolicyProvider)
+    IRetryPolicyProvider retryPolicyProvider,
+    IResponseHandler responseHandler,
+    ITokenManagementService tokenManagementService)
 {
-    private const int TokenExpirationTimeInSeconds = 3600;
     private readonly IAsyncPolicy<HttpResponseMessage> _retryPolicy = retryPolicyProvider.GetRetryPolicy();
-    private string? _accessToken;
-    private DateTime _accessTokenExpiration;
 
     public async Task<List<Thing>?> GetThingsAsync()
     {
-        var accessToken = await GetAccessTokenAsync();
-        
+        var accessToken = await tokenManagementService.GetAccessTokenAsync();
+
         var response = await _retryPolicy.ExecuteAsync(async () =>
         {
             var request = new HttpRequestMessage(HttpMethod.Get,
-                $"https://api2.arduino.cc/iot/v2/things");
+                "https://api2.arduino.cc/iot/v2/things");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
             return await httpClient.SendAsync(request);
         });
-        
-        if (!response.IsSuccessStatusCode) await HandleUnsuccessfulResponseAsync(response);
-        
+
+        if (!response.IsSuccessStatusCode) await responseHandler.HandleUnsuccessfulResponseAsync(response);
+
         var responseBody = await response.Content.ReadAsStringAsync();
         return JsonConvert.DeserializeObject<List<Thing>>(responseBody);
     }
 
     public async Task<List<ThingProperty>?> GetThingPropertiesAsync(string thingId)
     {
-        var accessToken = await GetAccessTokenAsync();
+        var accessToken = await tokenManagementService.GetAccessTokenAsync();
 
         var response = await _retryPolicy.ExecuteAsync(async () =>
         {
@@ -54,7 +45,7 @@ public class ArduinoCloudClient(
             return await httpClient.SendAsync(request);
         });
 
-        if (!response.IsSuccessStatusCode) await HandleUnsuccessfulResponseAsync(response, thingId);
+        if (!response.IsSuccessStatusCode) await responseHandler.HandleUnsuccessfulResponseAsync(response, thingId);
 
         var responseBody = await response.Content.ReadAsStringAsync();
         return JsonConvert.DeserializeObject<List<ThingProperty>>(responseBody);
@@ -62,7 +53,7 @@ public class ArduinoCloudClient(
 
     public async Task<ThingProperty?> UpdateThingPropertyAsync(string thingId, string propertyId)
     {
-        var accessToken = await GetAccessTokenAsync();
+        var accessToken = await tokenManagementService.GetAccessTokenAsync();
 
         var response = await _retryPolicy.ExecuteAsync(async () =>
         {
@@ -73,161 +64,10 @@ public class ArduinoCloudClient(
             return await httpClient.SendAsync(request);
         });
 
-        if (!response.IsSuccessStatusCode) await HandleUnsuccessfulResponseAsync(response);
+        if (!response.IsSuccessStatusCode) await responseHandler.HandleUnsuccessfulResponseAsync(response);
 
         var responseBody = await response.Content.ReadAsStringAsync();
         return JsonConvert.DeserializeObject<ThingProperty>(responseBody);
-    }
-
-    private async Task<string> GetAccessTokenAsync()
-    {
-        var localTokenData = await LoadAccessTokenLocal();
-        if (!string.IsNullOrEmpty(localTokenData?.AccessToken) && DateTime.UtcNow < localTokenData.TokenExpiration)
-            return localTokenData.AccessToken;
-
-        if (!string.IsNullOrEmpty(_accessToken) && DateTime.UtcNow < _accessTokenExpiration) return _accessToken;
-
-        var response = await _retryPolicy.ExecuteAsync(async () =>
-        {
-            var tokenRequest = new HttpRequestMessage(HttpMethod.Post, "https://api2.arduino.cc/iot/v1/clients/token");
-            var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("client_id", options.Value.ClientId),
-                new KeyValuePair<string, string>("client_secret", options.Value.ClientSecret),
-                new KeyValuePair<string, string>("audience", "https://api2.arduino.cc/iot")
-            });
-            tokenRequest.Content = content;
-            tokenRequest.Content.Headers.ContentType = new MediaTypeHeaderValue("application/x-www-form-urlencoded");
-
-            return await httpClient.SendAsync(tokenRequest);
-        });
-
-        if (!response.IsSuccessStatusCode) await HandleUnsuccessfulResponseAsync(response);
-
-        var responseBody = await response.Content.ReadAsStringAsync();
-        var tokenResponse = JsonConvert.DeserializeObject<TokenResponse>(responseBody);
-
-        _accessToken = tokenResponse?.AccessToken ?? string.Empty;
-        _accessTokenExpiration = DateTime.UtcNow.AddSeconds(TokenExpirationTimeInSeconds);
-        SaveAccessTokenLocal(_accessToken, _accessTokenExpiration);
-
-        logger.LogInformation("Access token received: {accessToken}", _accessToken);
-        return _accessToken;
-    }
-
-    private async Task<TokenData?> LoadAccessTokenLocal()
-    {
-        try
-        {
-            var jsonFileName = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AccessToken.json");
-            if (!File.Exists(jsonFileName)) return null;
-
-            var localTokenData = await File.ReadAllTextAsync(jsonFileName);
-            return JsonSerializer.Deserialize<TokenData>(localTokenData);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError("Error saving the access token locally: {errorMessage}", ex.Message);
-        }
-
-        return null;
-    }
-
-    private void SaveAccessTokenLocal(string accessToken, DateTime tokenExpiration)
-    {
-        try
-        {
-            var jsonFileName = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AccessToken.json");
-
-            if (!File.Exists(jsonFileName)) File.Create(jsonFileName).Dispose();
-
-            var tokenData = new
-            {
-                AccessToken = accessToken,
-                TokenExpiration = tokenExpiration
-            };
-
-            var jsonSerializerOptions = new JsonSerializerOptions { WriteIndented = true };
-            var jsonStringToken = JsonSerializer.Serialize(tokenData, jsonSerializerOptions);
-            File.WriteAllText(jsonFileName, jsonStringToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError("Error saving the access token locally: {errorMessage}", ex.Message);
-        }
-    }
-
-    private async Task HandleUnsuccessfulResponseAsync(HttpResponseMessage response, string? thingId = null)
-    {
-        var errorResponse = await response.Content.ReadAsStringAsync();
-        logger.LogError("Request failed with status code {StatusCode}: {ErrorResponse}", response.StatusCode,
-            errorResponse);
-
-        switch (response.StatusCode)
-        {
-            case HttpStatusCode.NotFound:
-                if (thingId != null)
-                {
-                    logger.LogError(
-                        "Thing not found. Please check the thingId {ThingId} and ensure the thing exists in your Arduino Cloud.",
-                        thingId);
-                    throw new NotFoundException($"Thing not found: {thingId}");
-                }
-
-                logger.LogError("404 Not Found error. URL or resource might be incorrect or temporarily unavailable.");
-                throw new NotFoundException(
-                    "404 Not Found error. URL or resource might be incorrect or temporarily unavailable.");
-
-            case HttpStatusCode.InternalServerError:
-                logger.LogError("Internal Server Error. Please try again later.");
-                throw new InternalServerErrorException("Internal Server Error. Please try again later.");
-
-            case HttpStatusCode.ServiceUnavailable:
-                logger.LogError("Service Unavailable. Please try again later.");
-                throw new ServiceUnavailableException("Service Unavailable. Please try again later.");
-
-            case HttpStatusCode.BadRequest:
-                logger.LogError("Bad Request. The request could not be understood or was missing required parameters.");
-                throw new HttpRequestException($"Bad Request: {errorResponse}");
-
-            case HttpStatusCode.Unauthorized:
-                logger.LogError(
-                    "Unauthorized. Authentication is required and has failed or has not yet been provided.");
-                throw new HttpRequestException($"Unauthorized: {errorResponse}");
-
-            case HttpStatusCode.Forbidden:
-                logger.LogError("Forbidden. The server understood the request, but is refusing to fulfill it.");
-                throw new HttpRequestException($"Forbidden: {errorResponse}");
-
-            case HttpStatusCode.RequestTimeout:
-                logger.LogError("Request Timeout. The server timed out waiting for the request.");
-                throw new HttpRequestException($"Request Timeout: {errorResponse}");
-
-            case HttpStatusCode.Conflict:
-                logger.LogError(
-                    "Conflict. The request could not be completed due to a conflict with the current state of the resource.");
-                throw new HttpRequestException($"Conflict: {errorResponse}");
-
-            case HttpStatusCode.Gone:
-                logger.LogError("Gone. The requested resource is no longer available and will not be available again.");
-                throw new HttpRequestException($"Gone: {errorResponse}");
-
-            case HttpStatusCode.UnsupportedMediaType:
-                logger.LogError(
-                    "Unsupported Media Type. The request entity has a media type which the server or resource does not support.");
-                throw new HttpRequestException($"Unsupported Media Type: {errorResponse}");
-
-            case HttpStatusCode.TooManyRequests:
-                logger.LogError("Too Many Requests. The user has sent too many requests in a given amount of time.");
-                throw new HttpRequestException($"Too Many Requests: {errorResponse}");
-
-            default:
-                logger.LogError("Request failed with status code {StatusCode}: {ErrorResponse}", response.StatusCode,
-                    errorResponse);
-                throw new HttpRequestException(
-                    $"Request failed with status code {response.StatusCode}: {errorResponse}");
-        }
     }
 
     /*
