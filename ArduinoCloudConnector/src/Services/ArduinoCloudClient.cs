@@ -44,6 +44,16 @@ public class ArduinoCloudClient(
         return JsonConvert.DeserializeObject<ThingProperty>(responseBody);
     }
 
+    public async Task<List<Device>?> GetDevicesAsync()
+    {
+        var response = await SendRequestAsync("https://api2.arduino.cc/iot/v2/devices");
+
+        if (!response.IsSuccessStatusCode) await responseHandler.HandleUnsuccessfulResponseAsync(response);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        return JsonConvert.DeserializeObject<List<Device>>(responseBody);
+    }
+
     private async Task<HttpResponseMessage> SendRequestAsync(string url)
     {
         var accessToken = await tokenManagementService.GetAccessTokenAsync();

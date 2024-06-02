@@ -69,6 +69,27 @@ internal class Program
         {
             logger.LogError("Failed to get things: {Message}", ex.Message);
         }
+        
+        // Get all devices of user
+        try
+        {
+            var devices = await arduinoCloudClient.GetDevicesAsync();
+            if (devices is null)
+            {
+                var options = services.GetRequiredService<IOptions<ArduinoCloudClientOptions>>();
+                logger.LogError("No devices for the user with client Id: {clientId}", options.Value.ClientId);
+                return;
+            }
+
+            foreach (var device in devices)
+                logger.LogInformation(
+                    "ConnectionType: {ConnectionType}, Fqbn: {Fqbn}, Name: {Name}, Serial: {Serial}, Type: {Type}, UserId: {UserId}, WifiFwVersion: {WifiFwVersion}",
+                    device.ConnectionType, device.Fqbn, device.Name, device.Serial, device.Type, device.UserId, device.WifiFwVersion);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError("Failed to get devices: {Message}", ex.Message);
+        }
 
         // Get all properties of a given Thing
         try
