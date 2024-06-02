@@ -1,5 +1,7 @@
 ﻿using System.Net.Http.Headers;
 using ArduinoCloudConnector.Models;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using Polly;
 
@@ -7,24 +9,15 @@ namespace ArduinoCloudConnector.Services;
 
 public class ArduinoCloudClient(
     HttpClient httpClient,
+    ITokenManagementService tokenManagementService,
     IRetryPolicyProvider retryPolicyProvider,
-    IResponseHandler responseHandler,
-    ITokenManagementService tokenManagementService)
+    IResponseHandler responseHandler)
 {
     private readonly IAsyncPolicy<HttpResponseMessage> _retryPolicy = retryPolicyProvider.GetRetryPolicy();
 
     public async Task<List<Thing>?> GetThingsAsync()
     {
-        var accessToken = await tokenManagementService.GetAccessTokenAsync();
-
-        var response = await _retryPolicy.ExecuteAsync(async () =>
-        {
-            var request = new HttpRequestMessage(HttpMethod.Get,
-                "https://api2.arduino.cc/iot/v2/things");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-
-            return await httpClient.SendAsync(request);
-        });
+        var response = await SendRequestAsync("https://api2.arduino.cc/iot/v2/things");
 
         if (!response.IsSuccessStatusCode) await responseHandler.HandleUnsuccessfulResponseAsync(response);
 
@@ -34,16 +27,7 @@ public class ArduinoCloudClient(
 
     public async Task<List<ThingProperty>?> GetThingPropertiesAsync(string thingId)
     {
-        var accessToken = await tokenManagementService.GetAccessTokenAsync();
-
-        var response = await _retryPolicy.ExecuteAsync(async () =>
-        {
-            var request = new HttpRequestMessage(HttpMethod.Get,
-                $"https://api2.arduino.cc/iot/v2/things/{thingId}/properties");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-
-            return await httpClient.SendAsync(request);
-        });
+        var response = await SendRequestAsync($"https://api2.arduino.cc/iot/v2/things/{thingId}/properties");
 
         if (!response.IsSuccessStatusCode) await responseHandler.HandleUnsuccessfulResponseAsync(response, thingId);
 
@@ -53,21 +37,25 @@ public class ArduinoCloudClient(
 
     public async Task<ThingProperty?> UpdateThingPropertyAsync(string thingId, string propertyId)
     {
-        var accessToken = await tokenManagementService.GetAccessTokenAsync();
-
-        var response = await _retryPolicy.ExecuteAsync(async () =>
-        {
-            var request = new HttpRequestMessage(HttpMethod.Get,
-                $"https://api2.arduino.cc/iot/v2/things/{thingId}/properties/{propertyId}");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-
-            return await httpClient.SendAsync(request);
-        });
+        var response = await SendRequestAsync($"https://api2.arduino.cc/iot/v2/things/{thingId}/properties/{propertyId}");
 
         if (!response.IsSuccessStatusCode) await responseHandler.HandleUnsuccessfulResponseAsync(response);
 
         var responseBody = await response.Content.ReadAsStringAsync();
         return JsonConvert.DeserializeObject<ThingProperty>(responseBody);
+    }
+    
+    private async Task<HttpResponseMessage> SendRequestAsync(string url)
+    {
+        var accessToken = await tokenManagementService.GetAccessTokenAsync();
+
+        return await _retryPolicy.ExecuteAsync(async () =>
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+            return await httpClient.SendAsync(request);
+        });
     }
 
     /*

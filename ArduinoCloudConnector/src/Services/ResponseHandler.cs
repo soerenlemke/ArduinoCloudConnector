@@ -1,10 +1,14 @@
 using System.Net;
+using System.Net.Http.Headers;
 using ArduinoCloudConnector.Exceptions;
 using Microsoft.Extensions.Logging;
+using Polly;
 
 namespace ArduinoCloudConnector.Services;
 
-public class ResponseHandler(ILogger<TokenManagementService> logger) : IResponseHandler
+public class ResponseHandler(
+    ILogger<TokenManagementService> logger)
+    : IResponseHandler
 {
     public async Task HandleUnsuccessfulResponseAsync(HttpResponseMessage response, string? thingId = null)
     {
