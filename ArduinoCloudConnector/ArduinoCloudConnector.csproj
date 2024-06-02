@@ -16,4 +16,8 @@
       <PackageReference Include="Polly.Contrib.WaitAndRetry" Version="1.1.1" />
     </ItemGroup>
 
+    <PropertyGroup>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+    </PropertyGroup>
+
 </Project>
