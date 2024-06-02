@@ -55,47 +55,6 @@ THING_ID=your_thing_id
 ```
 Replace `your_client_id`, `your_client_secret`, and `your_thing_id` with your actual Arduino IoT Cloud credentials and Thing ID.
 
-#### Program.cs
-
-Here's an example of how to use the library to fetch and display properties of a Thing:
-
-```csharp
-using System;
-using System.Threading.Tasks;
-using DotNetEnv;
-using ArduinoCloudConnector;
-
-namespace ArduinoCloudConnector.ConsoleApp
-{
-    internal class Program
-    {
-        public static async Task Main(string[] args)
-        {
-            Env.Load();
-            var clientId = Env.GetString("CLIENT_ID");
-            var clientSecret = Env.GetString("CLIENT_SECRET");
-            var thingId = Env.GetString("THING_ID");
-
-            var arduinoCloudClient = new ArduinoCloudClient(clientId, clientSecret);
-
-            try
-            {
-                var thingProperties = await arduinoCloudClient.GetThingPropertiesAsync(thingId);
-
-                foreach (var property in thingProperties)
-                {
-                    Console.WriteLine($"Name: {property.Name}, Value: {property.LastValue}, Type: {property.Type}, Updated At: {property.ValueUpdatedAt}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Failed to get thing properties: {ex.Message}");
-            }
-        }
-    }
-}
-```
-
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request for any improvements or new features.
