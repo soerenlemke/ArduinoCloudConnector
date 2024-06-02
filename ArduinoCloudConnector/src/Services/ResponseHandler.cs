@@ -1,8 +1,6 @@
 using System.Net;
-using System.Net.Http.Headers;
 using ArduinoCloudConnector.Exceptions;
 using Microsoft.Extensions.Logging;
-using Polly;
 
 namespace ArduinoCloudConnector.Services;
 

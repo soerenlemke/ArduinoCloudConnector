@@ -1,7 +1,5 @@
 ﻿using System.Net.Http.Headers;
 using ArduinoCloudConnector.Models;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using Polly;
 
@@ -37,14 +35,15 @@ public class ArduinoCloudClient(
 
     public async Task<ThingProperty?> UpdateThingPropertyAsync(string thingId, string propertyId)
     {
-        var response = await SendRequestAsync($"https://api2.arduino.cc/iot/v2/things/{thingId}/properties/{propertyId}");
+        var response =
+            await SendRequestAsync($"https://api2.arduino.cc/iot/v2/things/{thingId}/properties/{propertyId}");
 
         if (!response.IsSuccessStatusCode) await responseHandler.HandleUnsuccessfulResponseAsync(response);
 
         var responseBody = await response.Content.ReadAsStringAsync();
         return JsonConvert.DeserializeObject<ThingProperty>(responseBody);
     }
-    
+
     private async Task<HttpResponseMessage> SendRequestAsync(string url)
     {
         var accessToken = await tokenManagementService.GetAccessTokenAsync();
